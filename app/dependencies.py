@@ -2,6 +2,7 @@ from typing import Annotated, Any
 
 import httpx
 import jwt
+from jwt import PyJWK
 import structlog
 from asyncpg import Connection  # type: ignore[import-untyped]
 from fastapi import Depends, Header, HTTPException, Request
@@ -88,9 +89,12 @@ async def get_current_user(
         raise HTTPException(status_code=401, detail="Unknown token key")
 
     try:
-        public_key = jwt.algorithms.RSAAlgorithm.from_jwk(key_data)  # type: ignore[attr-defined]
+        signing_key = PyJWK(key_data)
         payload: dict[str, Any] = jwt.decode(
-            token, public_key, algorithms=["RS256"], audience="authenticated"
+            token,
+            signing_key.key,
+            algorithms=[signing_key.algorithm_name],
+            audience="authenticated",
         )
         return payload
     except jwt.ExpiredSignatureError as exc:

@@ -615,6 +615,7 @@ async def client():
 ## Important Rules
 
 - **No git commits** — only the human makes commits.
+- **Credentials alert** — if any code, config, or file you write or encounter contains credentials, passwords, API keys, or tokens, immediately alert the user and add a `# credentials` comment on the line immediately after.
 - **Always `python3` and `pip3`** — never `python` or `pip`.
 - **Never commit `.env`** — only `.env.example`.
 - **All monetary values** from the shared database are in cents (integers).
