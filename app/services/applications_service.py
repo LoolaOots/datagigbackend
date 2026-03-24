@@ -75,9 +75,11 @@ SELECT
     a.note_from_user,
     g.description AS gig_description,
     g.activity_type AS gig_activity_type,
-    g.data_deadline AS gig_data_deadline
+    g.data_deadline AS gig_data_deadline,
+    cp.company_name
 FROM applications a
 LEFT JOIN gigs g ON g.id = a.gig_id
+LEFT JOIN company_profiles cp ON cp.user_id = g.company_id
 WHERE a.id = $1
   AND a.user_id = $2
 """
@@ -86,6 +88,7 @@ _GET_GIG_LABELS_SQL = """
 SELECT
     id::text,
     label_name,
+    description,
     duration_seconds,
     rate_cents
 FROM gig_labels
@@ -202,6 +205,7 @@ class ApplicationsService:
             ApplicationLabelDetail(
                 id=lr["id"],
                 label_name=lr["label_name"],
+                description=lr["description"],
                 duration_seconds=lr["duration_seconds"],
                 rate_cents=lr["rate_cents"],
             )
@@ -210,6 +214,7 @@ class ApplicationsService:
 
         gig_detail = ApplicationGigDetail(
             title=row["gig_title"] or "",
+            company_name=row["company_name"] or "",
             description=row["gig_description"],
             activity_type=row["gig_activity_type"],
             data_deadline=row["gig_data_deadline"],
