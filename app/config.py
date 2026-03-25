@@ -20,6 +20,9 @@ class Settings(BaseSettings):
     # Resend
     resend_api_key: str
 
+    # Supabase JWT secret (for HS256 token verification — Settings > API > JWT Secret in dashboard)
+    supabase_jwt_secret: str
+
     # Internal auth
     internal_api_secret: str
 
