@@ -161,25 +161,21 @@ settings = get_settings()
 
 ### Supabase — Auth (JWT Verification)
 
-The website and iOS app both issue Supabase JWTs. Verify them using JWKS (asymmetric, preferred):
+The iOS app issues Supabase JWTs. This project uses **EC (OKP/EdDSA) keys**, NOT RSA. Always handle all key types by checking `kty`. The working implementation is in `app/dependencies.py` — do not replace it with RSA-only code.
 
 ```python
-import httpx
-import jwt  # PyJWT[cryptography]
+from jwt.algorithms import ECAlgorithm, OKPAlgorithm, RSAAlgorithm
 
-JWKS_URL = f"{settings.supabase_url}/auth/v1/.well-known/jwks.json"
-
-async def verify_supabase_jwt(token: str) -> dict:
-    async with httpx.AsyncClient() as client:
-        resp = await client.get(JWKS_URL)
-        jwks = resp.json()
-    header = jwt.get_unverified_header(token)
-    key = next(k for k in jwks["keys"] if k["kid"] == header["kid"])
-    public_key = jwt.algorithms.RSAAlgorithm.from_jwk(key)
-    return jwt.decode(token, public_key, algorithms=["RS256"], audience="authenticated")
+def _public_key_from_jwk(key_data: dict) -> tuple[Any, list[str]]:
+    kty = key_data.get("kty", "")
+    match kty:
+        case "RSA": return RSAAlgorithm.from_jwk(key_data), ["RS256", "RS384", "RS512"]
+        case "EC":  return ECAlgorithm.from_jwk(key_data),  ["ES256", "ES384", "ES512"]
+        case "OKP": return OKPAlgorithm.from_jwk(key_data), ["EdDSA"]
+        case _: raise HTTPException(status_code=401, detail=f"Unsupported key type: {kty!r}")
 ```
 
-Cache the JWKS response (e.g. on `app.state`) — do not fetch it on every request.
+Cache JWKS on `app.state` — re-fetch only when `kid` is unknown. See `app/dependencies.py` for the full implementation.
 
 ### Supabase — Storage (download sensor files)
 

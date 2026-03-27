@@ -5,6 +5,7 @@ import jwt
 import structlog
 from asyncpg import Connection  # type: ignore[import-untyped]
 from fastapi import Depends, Header, HTTPException, Request
+from jwt.algorithms import ECAlgorithm, OKPAlgorithm, RSAAlgorithm
 
 from app.config import get_settings, Settings
 
@@ -47,17 +48,35 @@ InternalAuth = Annotated[None, Depends(require_internal)]
 # ---------------------------------------------------------------------------
 
 
+def _public_key_from_jwk(key_data: dict[str, Any]) -> tuple[Any, list[str]]:
+    """Convert a JWK dict to a (public_key, algorithms) pair based on key type."""
+    kty = key_data.get("kty", "")
+    match kty:
+        case "RSA":
+            return RSAAlgorithm.from_jwk(key_data), ["RS256", "RS384", "RS512"]
+        case "EC":
+            return ECAlgorithm.from_jwk(key_data), ["ES256", "ES384", "ES512"]
+        case "OKP":
+            return OKPAlgorithm.from_jwk(key_data), ["EdDSA"]
+        case _:
+            raise HTTPException(status_code=401, detail=f"Unsupported JWK key type: {kty!r}")
+
+
+async def _fetch_jwks(url: str) -> dict[str, Any]:
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(url)
+        resp.raise_for_status()
+    return resp.json()  # type: ignore[no-any-return]
+
+
 async def get_current_user(
     request: Request,
     authorization: Annotated[str, Header()],
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> dict[str, Any]:
     """
-    Verify a Supabase JWT using the cached JWKS stored on app.state.
-
-    The JWKS is fetched once at startup (in lifespan) and cached on
-    app.state.jwks.  Falls back to a fresh fetch if the cached keys do not
-    contain the required kid.
+    Verify a Supabase JWT using JWKS. Handles RSA, EC, and OKP key types.
+    JWKS is cached on app.state and re-fetched only when the kid is unknown.
     """
     if not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Invalid authorization header")
@@ -66,36 +85,34 @@ async def get_current_user(
 
     try:
         header = jwt.get_unverified_header(token)
-    except jwt.exceptions.DecodeError as exc:
+    except jwt.DecodeError as exc:
         raise HTTPException(status_code=401, detail="Invalid token") from exc
 
     kid = header.get("kid")
+    jwks_url = f"{settings.supabase_url}/auth/v1/.well-known/jwks.json"
 
-    # Use cached JWKS; re-fetch if kid is missing
     jwks: dict[str, Any] = getattr(request.app.state, "jwks", {"keys": []})
     key_data = next((k for k in jwks.get("keys", []) if k.get("kid") == kid), None)
 
     if key_data is None:
-        jwks_url = f"{settings.supabase_url}/auth/v1/.well-known/jwks.json"
-        async with httpx.AsyncClient() as client:
-            resp = await client.get(jwks_url)
-            resp.raise_for_status()
-        jwks = resp.json()
+        jwks = await _fetch_jwks(jwks_url)
         request.app.state.jwks = jwks
         key_data = next((k for k in jwks.get("keys", []) if k.get("kid") == kid), None)
 
     if key_data is None:
-        raise HTTPException(status_code=401, detail="Unknown token key")
+        raise HTTPException(status_code=401, detail="Unknown token signing key")
+
+    public_key, algorithms = _public_key_from_jwk(key_data)
 
     try:
-        public_key = jwt.algorithms.RSAAlgorithm.from_jwk(key_data)  # type: ignore[attr-defined]
         payload: dict[str, Any] = jwt.decode(
-            token, public_key, algorithms=["RS256"], audience="authenticated"
+            token, public_key, algorithms=algorithms, audience="authenticated"
         )
         return payload
     except jwt.ExpiredSignatureError as exc:
         raise HTTPException(status_code=401, detail="Token expired") from exc
     except jwt.InvalidTokenError as exc:
+        logger.error("jwt_decode_failed", error=str(exc), error_type=type(exc).__name__)
         raise HTTPException(status_code=401, detail="Invalid token") from exc
 
 

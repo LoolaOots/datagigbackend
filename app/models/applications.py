@@ -37,6 +37,7 @@ class ApplicationLabelDetail(BaseModel):
 
     id: str
     label_name: str
+    description: str | None
     duration_seconds: int | None
     rate_cents: int
 
@@ -45,6 +46,7 @@ class ApplicationGigDetail(BaseModel):
     """Gig detail nested inside GET /applications/{id}."""
 
     title: str
+    company_name: str
     description: str | None
     activity_type: str | None
     data_deadline: datetime | None
