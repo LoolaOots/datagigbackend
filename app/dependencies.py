@@ -63,7 +63,7 @@ def _public_key_from_jwk(key_data: dict[str, Any]) -> tuple[Any, list[str]]:
 
 
 async def _fetch_jwks(url: str) -> dict[str, Any]:
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(timeout=10.0) as client:
         resp = await client.get(url)
         resp.raise_for_status()
     return resp.json()  # type: ignore[no-any-return]
@@ -89,13 +89,20 @@ async def get_current_user(
         raise HTTPException(status_code=401, detail="Invalid token") from exc
 
     kid = header.get("kid")
+    if not kid:
+        raise HTTPException(status_code=401, detail="Token missing key ID")
+
     jwks_url = f"{settings.supabase_url}/auth/v1/.well-known/jwks.json"
 
     jwks: dict[str, Any] = getattr(request.app.state, "jwks", {"keys": []})
     key_data = next((k for k in jwks.get("keys", []) if k.get("kid") == kid), None)
 
     if key_data is None:
-        jwks = await _fetch_jwks(jwks_url)
+        try:
+            jwks = await _fetch_jwks(jwks_url)
+        except httpx.HTTPError as exc:
+            logger.error("jwks_fetch_failed", url=jwks_url, error=str(exc))
+            raise HTTPException(status_code=503, detail="Auth service unavailable") from exc
         request.app.state.jwks = jwks
         key_data = next((k for k in jwks.get("keys", []) if k.get("kid") == kid), None)
 
