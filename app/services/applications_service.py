@@ -43,7 +43,7 @@ WHERE gig_id = $1
 _INSERT_APPLICATION_SQL = """
 INSERT INTO applications (gig_id, user_id, device_type, note_from_user)
 VALUES ($1, $2, $3, $4)
-RETURNING id, gig_id, status, applied_at
+RETURNING id::text, gig_id::text, status, applied_at
 """
 
 _LIST_APPLICATIONS_SQL = """
