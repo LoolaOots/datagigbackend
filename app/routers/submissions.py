@@ -49,6 +49,7 @@ async def confirm_submission(
         user_id=user_id,
         application_id=body.application_id,
         gig_label_id=body.gig_label_id,
+        assignment_code=body.assignment_code,
         storage_path=body.storage_path,
         file_size_bytes=body.file_size_bytes,
         duration_seconds=body.duration_seconds,

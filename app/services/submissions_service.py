@@ -30,9 +30,14 @@ _INSERT_SUBMISSION = """
 """
 
 _GET_SUBMISSION = """
-    SELECT id, status
-    FROM submissions
-    WHERE application_id = $1 AND gig_label_id = $2 AND storage_path = $3 AND user_id = $4
+    SELECT s.id, s.status
+    FROM submissions s
+    JOIN applications a ON a.id = s.application_id
+    WHERE s.application_id = $1
+      AND s.gig_label_id = $2
+      AND s.storage_path = $3
+      AND s.user_id = $4
+      AND a.assignment_code = $5
 """
 
 _UPDATE_SUBMISSION_UPLOADED = """
@@ -80,7 +85,9 @@ class SubmissionsService:
         storage_path = f"submissions/{user_id}/{application_id}/{gig_label_id}/{timestamp}.{file_extension}"
 
         supabase = create_client(settings.supabase_url, settings.supabase_service_role_key)  # credentials
-        signed = supabase.storage.from_("sensor-data").create_signed_upload_url(storage_path)
+        signed = supabase.storage.from_("sensor-data").create_signed_upload_url(
+            storage_path, expires_in=600
+        )
         # Supabase returns {"signedURL": "...", "token": "..."}
         # The signedURL already embeds the token — iOS only needs the URL
         signed_url = signed["signedURL"]
@@ -108,6 +115,7 @@ class SubmissionsService:
         user_id: str,
         application_id: str,
         gig_label_id: str,
+        assignment_code: str,
         storage_path: str,
         file_size_bytes: int,
         duration_seconds: int,
@@ -120,7 +128,7 @@ class SubmissionsService:
         log = logger.bind(user_id=user_id, application_id=application_id)
 
         row = await conn.fetchrow(
-            _GET_SUBMISSION, application_id, gig_label_id, storage_path, user_id
+            _GET_SUBMISSION, application_id, gig_label_id, storage_path, user_id, assignment_code
         )
         if row is None:
             log.info("submission not found")
