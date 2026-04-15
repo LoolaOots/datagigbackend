@@ -3,6 +3,7 @@ import pytest
 from unittest.mock import AsyncMock, patch
 
 from app.dependencies import get_current_user
+from app.exceptions import NotFoundError
 from app.main import app
 
 pytestmark = pytest.mark.asyncio
@@ -55,7 +56,7 @@ async def test_get_upload_url_not_found(client):
     with patch(
         "app.services.submissions_service.SubmissionsService.get_upload_url",
         new_callable=AsyncMock,
-        return_value=None,
+        side_effect=NotFoundError("Assignment or label"),
     ):
         response = await client.post(
             "/submissions/upload-url",
@@ -114,7 +115,7 @@ async def test_confirm_submission_not_found(client):
     with patch(
         "app.services.submissions_service.SubmissionsService.confirm_submission",
         new_callable=AsyncMock,
-        return_value=None,
+        side_effect=NotFoundError("Submission"),
     ):
         response = await client.post(
             "/submissions/confirm",

@@ -1,5 +1,6 @@
 # app/models/submissions.py
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
+from typing import Literal
 
 
 class DeviceMetadata(BaseModel):
@@ -13,10 +14,11 @@ class UploadUrlRequest(BaseModel):
     assignment_code: str
     gig_label_id: str
     device_type: str
-    file_extension: str
+    file_extension: Literal["csv", "bin", "json"]
 
 
 class UploadUrlResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
     signed_url: str
     storage_path: str
     application_id: str
@@ -35,4 +37,5 @@ class ConfirmSubmissionRequest(BaseModel):
 
 
 class ConfirmSubmissionResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
     submission_id: str

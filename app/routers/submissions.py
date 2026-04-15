@@ -1,6 +1,6 @@
 # app/routers/submissions.py
 import structlog
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 
 from app.dependencies import CurrentUser, DBConn
 from app.models.submissions import (
@@ -32,8 +32,6 @@ async def get_upload_url(
         device_type=body.device_type,
         file_extension=body.file_extension,
     )
-    if result is None:
-        raise HTTPException(status_code=404, detail="Assignment or label not found")
     return UploadUrlResponse(**result)
 
 
@@ -55,6 +53,4 @@ async def confirm_submission(
         duration_seconds=body.duration_seconds,
         device_metadata=body.device_metadata.model_dump(),
     )
-    if result is None:
-        raise HTTPException(status_code=404, detail="Submission not found")
     return ConfirmSubmissionResponse(**result)

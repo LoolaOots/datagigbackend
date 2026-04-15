@@ -1,4 +1,5 @@
 # app/services/submissions_service.py
+import asyncio
 import json
 from datetime import datetime, timezone
 from typing import Any
@@ -8,6 +9,7 @@ from asyncpg import Connection
 from supabase import create_client  # type: ignore[import-untyped]
 
 from app.config import settings
+from app.exceptions import NotFoundError
 
 logger = structlog.get_logger(__name__)
 
@@ -52,6 +54,15 @@ _UPDATE_SUBMISSION_UPLOADED = """
 
 
 class SubmissionsService:
+    @staticmethod
+    def _create_signed_upload_url(storage_path: str) -> str:
+        """Synchronous helper — called via asyncio.to_thread."""
+        supabase = create_client(settings.supabase_url, settings.supabase_service_role_key)  # credentials
+        signed = supabase.storage.from_("sensor-data").create_signed_upload_url(
+            storage_path, expires_in=600
+        )
+        return signed["signedURL"]
+
     async def get_upload_url(
         self,
         conn: Connection,
@@ -61,36 +72,30 @@ class SubmissionsService:
         gig_label_id: str,
         device_type: str,
         file_extension: str,
-    ) -> dict[str, Any] | None:
+    ) -> dict[str, Any]:
         """
-        Returns dict with signed_url, storage_path, application_id
-        or None if assignment_code not found / not owned / gig_label_id invalid.
+        Returns dict with signed_url, storage_path, application_id.
+        Raises NotFoundError if assignment_code not found / not owned / gig_label_id invalid.
         """
         log = logger.bind(user_id=user_id, assignment_code=assignment_code)
 
         application = await conn.fetchrow(_GET_APPLICATION_BY_CODE, assignment_code)
         if application is None or str(application["user_id"]) != user_id:
             log.info("application not found or not owned")
-            return None
+            raise NotFoundError("Assignment or label")
 
         gig_label = await conn.fetchrow(
             _GET_GIG_LABEL, gig_label_id, str(application["gig_id"])
         )
         if gig_label is None:
             log.info("gig_label not found in application gig")
-            return None
+            raise NotFoundError("Assignment or label")
 
         application_id = str(application["id"])
         timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
         storage_path = f"submissions/{user_id}/{application_id}/{gig_label_id}/{timestamp}.{file_extension}"
 
-        supabase = create_client(settings.supabase_url, settings.supabase_service_role_key)  # credentials
-        signed = supabase.storage.from_("sensor-data").create_signed_upload_url(
-            storage_path, expires_in=600
-        )
-        # Supabase returns {"signedURL": "...", "token": "..."}
-        # The signedURL already embeds the token — iOS only needs the URL
-        signed_url = signed["signedURL"]
+        signed_url = await asyncio.to_thread(self._create_signed_upload_url, storage_path)
 
         submission_id = await conn.fetchval(
             _INSERT_SUBMISSION,
@@ -120,10 +125,11 @@ class SubmissionsService:
         file_size_bytes: int,
         duration_seconds: int,
         device_metadata: dict[str, Any],
-    ) -> dict[str, Any] | None:
+    ) -> dict[str, Any]:
         """
-        Returns dict with submission_id, or None if not found/not owned.
+        Returns dict with submission_id.
         Idempotent: returns existing submission_id if already uploaded.
+        Raises NotFoundError if submission not found / not owned.
         """
         log = logger.bind(user_id=user_id, application_id=application_id)
 
@@ -132,7 +138,7 @@ class SubmissionsService:
         )
         if row is None:
             log.info("submission not found")
-            return None
+            raise NotFoundError("Submission")
 
         if row["status"] == "uploaded":
             log.info("submission already uploaded (idempotent)")
