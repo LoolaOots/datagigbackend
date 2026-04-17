@@ -610,7 +610,6 @@ async def client():
 
 ## Important Rules
 
-- **No git commits** — only the human makes commits.
 - **Always `python3` and `pip3`** — never `python` or `pip`.
 - **Never commit `.env`** — only `.env.example`.
 - **All monetary values** from the shared database are in cents (integers).

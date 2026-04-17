@@ -26,8 +26,8 @@ _GET_GIG_LABEL = """
 """
 
 _INSERT_SUBMISSION = """
-    INSERT INTO submissions (user_id, application_id, gig_label_id, storage_path, status, device_type, created_at, updated_at)
-    VALUES ($1, $2, $3, $4, 'pending', $5, now(), now())
+    INSERT INTO submissions (user_id, application_id, gig_id, gig_label_id, storage_path, status, device_type, created_at, updated_at)
+    VALUES ($1, $2, $3, $4, $5, 'pending', $6, now(), now())
     RETURNING id
 """
 
@@ -59,9 +59,9 @@ class SubmissionsService:
         """Synchronous helper — called via asyncio.to_thread."""
         supabase = create_client(settings.supabase_url, settings.supabase_service_role_key)  # credentials
         signed = supabase.storage.from_("sensor-data").create_signed_upload_url(
-            storage_path, expires_in=600
+            storage_path
         )
-        return signed["signedURL"]
+        return signed["signed_url"]
 
     async def get_upload_url(
         self,
@@ -97,10 +97,12 @@ class SubmissionsService:
 
         signed_url = await asyncio.to_thread(self._create_signed_upload_url, storage_path)
 
+        gig_id = str(application["gig_id"])
         submission_id = await conn.fetchval(
             _INSERT_SUBMISSION,
             user_id,
             application_id,
+            gig_id,
             gig_label_id,
             storage_path,
             device_type,

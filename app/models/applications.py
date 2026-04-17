@@ -37,8 +37,8 @@ class ApplicationLabelDetail(BaseModel):
 
     id: str
     label_name: str
-    description: str | None
-    duration_seconds: int | None
+    description: str | None = None
+    duration_seconds: int | None = None
     rate_cents: int
 
 
