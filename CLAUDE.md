@@ -279,6 +279,8 @@ app.include_router(email_router.router)
 | `GET` | `/applications` | List current user's applications |
 | `GET` | `/applications/{id}` | Single application detail with gig labels |
 | `GET` | `/profile` | User dashboard stats (display name, credits balance) |
+| `POST` | `/submissions/upload-url` | Get a signed Supabase Storage URL to upload sensor data |
+| `POST` | `/submissions/confirm` | Record that upload completed; sets status to `uploaded` |
 
 #### Internal secret (website → backend)
 | Method | Path | Purpose |
@@ -426,6 +428,65 @@ Response: {
 Auth: Bearer token
 ```json
 Response: { "display_name": "Natalya", "credits_balance_cents": 2450 }
+```
+
+---
+
+### Submissions endpoint contracts
+
+All calls require `Authorization: Bearer {access_token}`.
+
+The submission flow is a two-step process: get a signed upload URL → iOS PUTs directly to Supabase Storage → confirm upload.
+
+#### POST /submissions/upload-url
+
+```json
+Request: {
+  "assignment_code": "ABC123DEF456",
+  "gig_label_id": "uuid",
+  "device_type": "generic_ios",
+  "file_extension": "csv"
+}
+Response: {
+  "signed_url": "https://…supabase.co/storage/v1/…",
+  "storage_path": "submissions/{userId}/{applicationId}/{gigLabelId}/{timestamp}.csv",
+  "application_id": "uuid"
+}
+```
+
+- Looks up the application by `assignment_code`, verifies it belongs to the authenticated user.
+- Validates `gig_label_id` belongs to the application's gig.
+- Creates a `submissions` row with status `pending`.
+- Returns a Supabase Storage signed upload URL — the iOS app PUTs the CSV directly to this URL.
+- `file_extension` must be one of: `csv`, `bin`, `json`.
+
+#### POST /submissions/confirm
+
+```json
+Request: {
+  "application_id": "uuid",
+  "gig_label_id": "uuid",
+  "assignment_code": "ABC123DEF456",
+  "storage_path": "submissions/…",
+  "file_size_bytes": 12345,
+  "duration_seconds": 120,
+  "device_type": "generic_ios",
+  "device_metadata": { "model": "iPhone 16", "os_version": "18.0" }
+}
+Response: { "submission_id": "uuid" }
+```
+
+- Looks up the pending submission by `(application_id, gig_label_id, storage_path, user_id, assignment_code)`.
+- Updates it to status `uploaded` and records `file_size_bytes`, `duration_seconds`, `device_metadata`.
+- **Idempotent** — if status is already `uploaded`, returns existing `submission_id` without error.
+- The website's Inngest job (`submission/verify`) polls for `uploaded` submissions, calls `POST /verify`, then transitions status to `pending_review` → `accepted`/`rejected`.
+
+#### Submission status lifecycle
+
+```
+pending   → (iOS uploads file) → confirm → uploaded
+uploaded  → (website Inngest verify job) → pending_review
+pending_review → (company review) → accepted | rejected
 ```
 
 ---
@@ -610,7 +671,6 @@ async def client():
 
 ## Important Rules
 
-- **No git commits** — only the human makes commits.
 - **Always `python3` and `pip3`** — never `python` or `pip`.
 - **Never commit `.env`** — only `.env.example`.
 - **All monetary values** from the shared database are in cents (integers).

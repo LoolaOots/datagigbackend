@@ -280,6 +280,7 @@ async def test_get_application_success(client: AsyncClient) -> None:
         note_from_user="I have experience",
         gig_detail=ApplicationGigDetail(
             title="My Gig",
+            company_name="Test Co",
             description="Walk around",
             activity_type="walking",
             data_deadline=None,

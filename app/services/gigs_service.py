@@ -129,6 +129,9 @@ class GigsService:
         labels = [_record_to_label(r) for r in label_rows]
         device_types: list[str] = list(row["device_types"]) if row["device_types"] else []
 
+        min_rate = min((l.rate_cents for l in labels), default=None)
+        max_rate = max((l.rate_cents for l in labels), default=None)
+
         return GigDetail(
             id=row["id"],
             title=row["title"],
@@ -140,6 +143,8 @@ class GigsService:
             application_deadline=row["application_deadline"],
             data_deadline=row["data_deadline"],
             company_name=row["company_name"],
+            min_rate_cents=min_rate,
+            max_rate_cents=max_rate,
             labels=labels,
             device_types=device_types,
         )

@@ -19,6 +19,7 @@ from app.routers import gigs as gigs_router
 from app.routers import health, verify
 from app.routers import applications as applications_router
 from app.routers import profile as profile_router
+from app.routers import submissions as submissions_router
 
 logger = structlog.get_logger(__name__)
 
@@ -97,6 +98,7 @@ def create_app() -> FastAPI:
     app.include_router(gigs_router.router)
     app.include_router(applications_router.router)
     app.include_router(profile_router.router)
+    app.include_router(submissions_router.router)
 
     return app
 
