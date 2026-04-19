@@ -1,6 +1,7 @@
 # app/services/submissions_service.py
 import asyncio
 import json
+import re
 from datetime import datetime, timezone
 from typing import Any
 
@@ -14,13 +15,15 @@ from app.exceptions import NotFoundError
 logger = structlog.get_logger(__name__)
 
 _GET_APPLICATION_BY_CODE = """
-    SELECT id, user_id, gig_id
-    FROM applications
-    WHERE assignment_code = $1
+    SELECT a.id, a.user_id, a.gig_id, g.title AS gig_title, cp.company_name
+    FROM applications a
+    JOIN gigs g ON g.id = a.gig_id
+    JOIN company_profiles cp ON cp.user_id = g.company_id
+    WHERE a.assignment_code = $1
 """
 
 _GET_GIG_LABEL = """
-    SELECT id
+    SELECT id, label_name
     FROM gig_labels
     WHERE id = $1 AND gig_id = $2
 """
@@ -51,6 +54,11 @@ _UPDATE_SUBMISSION_UPLOADED = """
         updated_at = now()
     WHERE id = $1
 """
+
+
+def _sanitize_name(name: str) -> str:
+    """Lowercase, replace non-alphanumeric runs with underscores, strip leading/trailing underscores."""
+    return re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_")
 
 
 class SubmissionsService:
@@ -92,8 +100,11 @@ class SubmissionsService:
             raise NotFoundError("Assignment or label")
 
         application_id = str(application["id"])
-        timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
-        storage_path = f"submissions/{user_id}/{application_id}/{gig_label_id}/{timestamp}.{file_extension}"
+        timestamp_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
+        company_sanitized = _sanitize_name(application["company_name"])
+        gig_sanitized = _sanitize_name(application["gig_title"])
+        label_sanitized = _sanitize_name(gig_label["label_name"])
+        storage_path = f"submissions/{company_sanitized}/{gig_sanitized}/{label_sanitized}/{timestamp_ms}_{label_sanitized}.csv"
 
         signed_url = await asyncio.to_thread(self._create_signed_upload_url, storage_path)
 
